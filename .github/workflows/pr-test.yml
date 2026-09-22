@@ -25,7 +25,7 @@ env:
 jobs:
   test:
     if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
-    runs-on: [self-hosted, hcu]
+    runs-on: [self-hosted, BW1100]
     timeout-minutes: 480
     container:
       image: ${{ vars.BASE_COMPILE_IMAGE_ROCKY_PY310 }}
