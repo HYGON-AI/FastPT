@@ -1,0 +1,196 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: BSD-3-Clause
+
+name: FastPT CI
+
+on:
+  push:
+    branches:
+      - ci-fastpt
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fastpt-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DTK_PKG_URL: ${{ vars.RESOURCE_SERVER_URL }}/dtk-pkg/dtk26.04/DTK-26.04-rc4-centos8-x86_64.tar.gz
+  TORCH_INDEX_URL: http://10.16.1.201:9929/das_nightly/dtk2604-rc4/+simple/torch/
+  PYTORCH_REPOSITORY: https://github.com/HYGON-AI/pytorch-das.git
+  PYTORCH_REF: 2.12.0-dev
+
+jobs:
+  build-and-test:
+    runs-on: [self-hosted, hcu]
+    timeout-minutes: 480
+    container:
+      image: ${{ vars.BASE_COMPILE_IMAGE_ROCKY_PY310 }}
+      options: >-
+        --device=/dev/kfd --device=/dev/dri/ --group-add video
+        -v /opt/hyhal/:/opt/hyhal/:ro
+        --shm-size=80G
+        --cap-add=SYS_PTRACE
+        --security-opt seccomp=unconfined
+        --privileged=true
+
+    steps:
+      - name: Checkout FastPT
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Prepare log directory
+        shell: bash
+        run: mkdir -p logs
+
+      - name: Install DTK
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            cd /opt
+            wget -q "${DTK_PKG_URL}"
+            tar -xzf "$(basename "${DTK_PKG_URL}")"
+            rm -rf dtk
+            mv dtk-* dtk
+          } 2>&1 | tee "${GITHUB_WORKSPACE}/logs/install-dtk.log"
+
+      - name: Install AICC
+        shell: bash
+        env:
+          RESOURCE_SERVER_URL: ${{ vars.RESOURCE_SERVER_URL }}
+        run: |
+          set -euo pipefail
+          {
+            wget "${RESOURCE_SERVER_URL}/ai_cc/Nightly/hcu_llvm_installer.sh"
+            bash hcu_llvm_installer.sh --major 1.0.0
+          } 2>&1 | tee logs/install-aicc.log
+
+      - name: Select and install latest Torch 2.12 wheel
+        shell: bash
+        run: |
+          set -euo pipefail
+          source /opt/dtk/cuda/env.sh
+
+          TORCH_WHEEL_URL="$(python3 - <<'PY'
+          import html
+          import re
+          import urllib.parse
+          import urllib.request
+
+          index_url = "${{ env.TORCH_INDEX_URL }}"
+          with urllib.request.urlopen(index_url) as response:
+              page = response.read().decode("utf-8")
+
+          links = [html.unescape(link) for link in re.findall(r'href=["\x27]([^"\x27]+)', page, re.I)]
+          candidates = []
+          for link in links:
+              url = urllib.parse.urljoin(index_url, link)
+              filename = urllib.parse.unquote(urllib.parse.urlsplit(url).path.rsplit("/", 1)[-1])
+              if not re.fullmatch(
+                  r"torch-2\.12\.0\+.*-cp310-cp310-manylinux_2_28_x86_64\.whl",
+                  filename,
+              ):
+                  continue
+              build = re.search(r"\.dtk2604\.(\d+)\.g[0-9a-f]+-", filename)
+              if build:
+                  candidates.append((int(build.group(1)), filename, url))
+
+          if not candidates:
+              raise SystemExit("No Torch 2.12 cp310 manylinux_2_28 wheel found")
+
+          _, filename, url = max(candidates)
+          print(url)
+          print(f"Selected {filename}", file=__import__("sys").stderr)
+          PY
+          )"
+
+          echo "TORCH_WHEEL_URL=${TORCH_WHEEL_URL}" | tee logs/torch-wheel.log
+          python3 -m pip install --no-cache-dir wheel setuptools cmake ninja
+          python3 -m pip install --no-cache-dir "${TORCH_WHEEL_URL}"
+          python3 -c 'import torch; print(f"torch={torch.__version__}"); print(f"torch.hip={torch.version.hip}")' \
+            2>&1 | tee -a logs/torch-wheel.log
+
+      - name: Checkout matching PyTorch source branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch "${PYTORCH_REF}" \
+            "${PYTORCH_REPOSITORY}" "${RUNNER_TEMP}/pytorch-das" \
+            2>&1 | tee logs/clone-pytorch.log
+          git -C "${RUNNER_TEMP}/pytorch-das" rev-parse HEAD | tee -a logs/clone-pytorch.log
+          echo "HIP_TORCH_PATH=${RUNNER_TEMP}/pytorch-das" >> "${GITHUB_ENV}"
+
+      - name: Record build environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          source /opt/dtk/cuda/env.sh
+          {
+            echo "FastPT commit: $(git rev-parse HEAD)"
+            echo "PyTorch source: $(git -C "${HIP_TORCH_PATH}" rev-parse HEAD)"
+            python3 --version
+            python3 -m pip --version
+            python3 -c 'import torch; print(f"torch={torch.__version__}"); print(f"torch.hip={torch.version.hip}")'
+            cat /opt/dtk/.info/rocm_version 2>/dev/null || true
+            cmake --version
+            make --version | head -n 1
+            hipcc --version
+          } 2>&1 | tee logs/environment.log
+
+      - name: Build FastPT wheel
+        shell: bash
+        env:
+          FASTPT_CTEST: "1"
+        run: |
+          set -euo pipefail
+          source /opt/dtk/cuda/env.sh
+          export TORCH_PATH="$(python3 -c 'import os, torch; print(os.path.dirname(torch.__file__))')"
+          echo "TORCH_PATH=${TORCH_PATH}" | tee logs/build.log
+          echo "HIP_TORCH_PATH=${HIP_TORCH_PATH}" | tee -a logs/build.log
+          git submodule update --init --recursive 2>&1 | tee -a logs/build.log
+          rm -rf build dist fastpt.egg-info torch-mocker/build
+          python3 setup.py bdist_wheel 2>&1 | tee -a logs/build.log
+          ls -lh dist/*.whl | tee -a logs/build.log
+
+      - name: Install and verify FastPT
+        shell: bash
+        run: |
+          set -euo pipefail
+          source /opt/dtk/cuda/env.sh
+          {
+            python3 -m pip install --no-deps --force-reinstall dist/fastpt-*.whl
+            python3 -c 'import fastpt; print(fastpt.__version__)'
+            fastpt.hipify.file --help
+          } 2>&1 | tee logs/install-verify.log
+
+      - name: Run CTest
+        shell: bash
+        run: |
+          set -euo pipefail
+          source /opt/dtk/cuda/env.sh
+          export TORCH_PATH="$(python3 -c 'import os, torch; print(os.path.dirname(torch.__file__))')"
+          export LD_LIBRARY_PATH="${PWD}/torch-mocker/build:${TORCH_PATH}/lib:${LD_LIBRARY_PATH:-}"
+          ctest --test-dir torch-mocker/build --output-on-failure -j1 \
+            2>&1 | tee logs/ctest.log
+
+      - name: Upload build records and test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fastpt-ci-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            logs/
+            dist/*.whl
+            torch-mocker/build/Testing/Temporary/
+
+      - name: Clean workspace
+        if: always()
+        shell: bash
+        run: rm -rf "${GITHUB_WORKSPACE}"/* "${GITHUB_WORKSPACE}"/.[!.]* || true
