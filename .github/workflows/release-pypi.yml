@@ -17,8 +17,8 @@ permissions:
 env:
   DTK_PKG_URL: ${{ vars.RESOURCE_SERVER_URL }}/dtk-pkg/dtk26.04/DTK-26.04-rc4-centos8-x86_64.tar.gz
   PYPI_URL: ${{ vars.PYPI_URL }}
-  PYTORCH_REPOSITORY: https://github.com/HYGON-AI/pytorch-das.git
   PYTORCH_REF: 2.12.0-dev
+  HIP_TORCH_PATH: ${{ github.workspace }}/pytorch-das
 
 jobs:
   compile-test-release:
@@ -99,14 +99,14 @@ jobs:
           } 2>&1 | tee logs/torch-wheel.log
 
       - name: Checkout PyTorch 2.12 source
-        shell: bash
-        run: |
-          set -euo pipefail
-          git clone --depth 1 --branch "${PYTORCH_REF}" \
-            "${PYTORCH_REPOSITORY}" "${RUNNER_TEMP}/pytorch-das" \
-            2>&1 | tee logs/clone-pytorch.log
-          git -C "${RUNNER_TEMP}/pytorch-das" rev-parse HEAD | tee -a logs/clone-pytorch.log
-          echo "HIP_TORCH_PATH=${RUNNER_TEMP}/pytorch-das" >> "${GITHUB_ENV}"
+        uses: actions/checkout@v4
+        with:
+          repository: HYGON-AI/pytorch-das
+          ref: ${{ env.PYTORCH_REF }}
+          path: pytorch-das
+          fetch-depth: 1
+          persist-credentials: false
+          token: ${{ secrets.PYTORCH_READ_TOKEN }}
 
       - name: Build FastPT wheel
         shell: bash
