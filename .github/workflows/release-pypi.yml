@@ -86,9 +86,11 @@ jobs:
       - name: Install latest Torch 2.12 wheel
         shell: bash
         run: |
-          set -euo pipefail
+          set -eo pipefail
           export ROCM_PATH=/opt/dtk
+          source /opt/dtk/env.sh
           source /opt/dtk/cuda/env.sh
+          set -u
           {
             python3 -m pip index versions torch
             python3 -m pip install --no-cache-dir wheel setuptools cmake ninja
@@ -111,9 +113,11 @@ jobs:
         env:
           FASTPT_CTEST: "1"
         run: |
-          set -euo pipefail
+          set -eo pipefail
           export ROCM_PATH=/opt/dtk
+          source /opt/dtk/env.sh
           source /opt/dtk/cuda/env.sh
+          set -u
           export TORCH_PATH="$(python3 -c 'import os, torch; print(os.path.dirname(torch.__file__))')"
           {
             echo "FastPT commit: $(git rev-parse HEAD)"
@@ -131,9 +135,11 @@ jobs:
       - name: Install and verify FastPT
         shell: bash
         run: |
-          set -euo pipefail
+          set -eo pipefail
           export ROCM_PATH=/opt/dtk
+          source /opt/dtk/env.sh
           source /opt/dtk/cuda/env.sh
+          set -u
           {
             python3 -m pip install --no-deps --force-reinstall dist/fastpt-*.whl
             python3 -c 'import fastpt; print(fastpt.__version__)'
@@ -143,9 +149,11 @@ jobs:
       - name: Run CTest
         shell: bash
         run: |
-          set -euo pipefail
+          set -eo pipefail
           export ROCM_PATH=/opt/dtk
+          source /opt/dtk/env.sh
           source /opt/dtk/cuda/env.sh
+          set -u
           export TORCH_PATH="$(python3 -c 'import os, torch; print(os.path.dirname(torch.__file__))')"
           export LD_LIBRARY_PATH="${PWD}/torch-mocker/build:${TORCH_PATH}/lib:${LD_LIBRARY_PATH:-}"
           ctest --test-dir torch-mocker/build --output-on-failure -j1 \
