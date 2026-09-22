@@ -25,7 +25,7 @@ jobs:
     concurrency:
       group: fastpt-release-${{ github.ref }}-torch2.12
       cancel-in-progress: true
-    runs-on: [self-hosted, BW1100]
+    runs-on: self-hosted
     timeout-minutes: 480
     container:
       image: ${{ vars.BASE_COMPILE_IMAGE_ROCKY_PY310 }}
