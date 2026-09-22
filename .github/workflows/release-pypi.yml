@@ -118,6 +118,8 @@ jobs:
           source /opt/dtk/env.sh
           source /opt/dtk/cuda/env.sh
           set -u
+          git config --global --add safe.directory "${GITHUB_WORKSPACE}"
+          git config --global --add safe.directory "${HIP_TORCH_PATH}"
           export TORCH_PATH="$(python3 -c 'import os, torch; print(os.path.dirname(torch.__file__))')"
           {
             echo "FastPT commit: $(git rev-parse HEAD)"
