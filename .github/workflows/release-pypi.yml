@@ -87,6 +87,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          export ROCM_PATH=/opt/dtk
           source /opt/dtk/cuda/env.sh
           {
             python3 -m pip index versions torch
@@ -111,6 +112,7 @@ jobs:
           FASTPT_CTEST: "1"
         run: |
           set -euo pipefail
+          export ROCM_PATH=/opt/dtk
           source /opt/dtk/cuda/env.sh
           export TORCH_PATH="$(python3 -c 'import os, torch; print(os.path.dirname(torch.__file__))')"
           {
@@ -130,6 +132,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          export ROCM_PATH=/opt/dtk
           source /opt/dtk/cuda/env.sh
           {
             python3 -m pip install --no-deps --force-reinstall dist/fastpt-*.whl
@@ -141,6 +144,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          export ROCM_PATH=/opt/dtk
           source /opt/dtk/cuda/env.sh
           export TORCH_PATH="$(python3 -c 'import os, torch; print(os.path.dirname(torch.__file__))')"
           export LD_LIBRARY_PATH="${PWD}/torch-mocker/build:${TORCH_PATH}/lib:${LD_LIBRARY_PATH:-}"
