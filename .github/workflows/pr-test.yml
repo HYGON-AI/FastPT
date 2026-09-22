@@ -1,21 +1,19 @@
 # Copyright (c) 2026 Hygon Information Technology Co., Ltd.
 # SPDX-License-Identifier: BSD-3-Clause
 
-name: FastPT CI
+name: pr-test
 
 on:
-  push:
+  pull_request:
     branches:
-      - ci-fastpt
-  workflow_dispatch:
+      - v2.12
+    types: [opened, synchronize, reopened, ready_for_review]
 
 permissions:
   contents: read
-  pull-requests: read
-  checks: read
 
 concurrency:
-  group: fastpt-ci-${{ github.ref }}
+  group: fastpt-pr-test-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 env:
@@ -25,7 +23,8 @@ env:
   PYTORCH_REF: 2.12.0-dev
 
 jobs:
-  build-and-test:
+  test:
+    if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
     runs-on: [self-hosted, hcu]
     timeout-minutes: 480
     container:
@@ -39,25 +38,22 @@ jobs:
         --privileged=true
 
     steps:
-      - name: Checkout FastPT
+      - name: Checkout PR with latest v2.12
         uses: actions/checkout@v4
         with:
-          submodules: recursive
           fetch-depth: 0
+          submodules: recursive
+          persist-credentials: false
 
-      - name: Prepare log directory
-        shell: bash
-        run: mkdir -p logs
-
-      - name: Configure nightly pip source
+      - name: Prepare logs and pip source
         shell: bash
         env:
           PIP_INDEX: ${{ env.PYPI_URL }}/nightly/dtk2604/+simple/
         run: |
           set -euo pipefail
+          mkdir -p logs ~/.pip
           TRUSTED_HOST="${PIP_INDEX#*://}"
           TRUSTED_HOST="${TRUSTED_HOST%%/*}"
-          mkdir -p ~/.pip
           printf '%s\n' \
             '[global]' \
             "index-url = ${PIP_INDEX}" \
@@ -96,12 +92,11 @@ jobs:
           {
             python3 -m pip index versions torch
             python3 -m pip install --no-cache-dir wheel setuptools cmake ninja
-            # 未指定 DAS 本地版本，pip 会从该源选择最新的 2.12.0 构建。
-            python3 -m pip install --no-cache-dir 'torch==2.12.0'
+            python3 -m pip install --no-cache-dir --upgrade --force-reinstall 'torch==2.12.0'
             python3 -c 'import torch; print(f"torch={torch.__version__}"); print(f"torch.hip={torch.version.hip}")'
           } 2>&1 | tee logs/torch-wheel.log
 
-      - name: Checkout matching PyTorch source branch
+      - name: Checkout PyTorch 2.12 source
         shell: bash
         run: |
           set -euo pipefail
@@ -111,23 +106,6 @@ jobs:
           git -C "${RUNNER_TEMP}/pytorch-das" rev-parse HEAD | tee -a logs/clone-pytorch.log
           echo "HIP_TORCH_PATH=${RUNNER_TEMP}/pytorch-das" >> "${GITHUB_ENV}"
 
-      - name: Record build environment
-        shell: bash
-        run: |
-          set -euo pipefail
-          source /opt/dtk/cuda/env.sh
-          {
-            echo "FastPT commit: $(git rev-parse HEAD)"
-            echo "PyTorch source: $(git -C "${HIP_TORCH_PATH}" rev-parse HEAD)"
-            python3 --version
-            python3 -m pip --version
-            python3 -c 'import torch; print(f"torch={torch.__version__}"); print(f"torch.hip={torch.version.hip}")'
-            cat /opt/dtk/.info/rocm_version 2>/dev/null || true
-            cmake --version
-            make --version | head -n 1
-            hipcc --version
-          } 2>&1 | tee logs/environment.log
-
       - name: Build FastPT wheel
         shell: bash
         env:
@@ -136,12 +114,18 @@ jobs:
           set -euo pipefail
           source /opt/dtk/cuda/env.sh
           export TORCH_PATH="$(python3 -c 'import os, torch; print(os.path.dirname(torch.__file__))')"
-          echo "TORCH_PATH=${TORCH_PATH}" | tee logs/build.log
-          echo "HIP_TORCH_PATH=${HIP_TORCH_PATH}" | tee -a logs/build.log
-          git submodule update --init --recursive 2>&1 | tee -a logs/build.log
-          rm -rf build dist fastpt.egg-info torch-mocker/build
-          python3 setup.py bdist_wheel 2>&1 | tee -a logs/build.log
-          ls -lh dist/*.whl | tee -a logs/build.log
+          {
+            echo "FastPT commit: $(git rev-parse HEAD)"
+            echo "PyTorch source: $(git -C "${HIP_TORCH_PATH}" rev-parse HEAD)"
+            echo "TORCH_PATH=${TORCH_PATH}"
+            echo "HIP_TORCH_PATH=${HIP_TORCH_PATH}"
+            python3 --version
+            cat /opt/dtk/.info/rocm_version 2>/dev/null || true
+            git submodule update --init --recursive
+            rm -rf build dist fastpt.egg-info torch-mocker/build
+            python3 setup.py bdist_wheel
+            ls -lh dist/*.whl
+          } 2>&1 | tee logs/build.log
 
       - name: Install and verify FastPT
         shell: bash
@@ -164,49 +148,16 @@ jobs:
           ctest --test-dir torch-mocker/build --output-on-failure -j1 \
             2>&1 | tee logs/ctest.log
 
-      - name: Apply DAS local version to wheel
-        if: ${{ github.event_name == 'push' }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          {
-            python3 -m pip install --no-cache-dir ciupload
-            DTK_VER="$(echo "${DTK_PKG_URL}" | grep -oP 'dtk\K[0-9]+\.[0-9]+' | tr -d '.')"
-            TORCH_VERSION="$(python3 -c 'import torch; print(torch.__version__.split("+")[0])')"
-            WHEEL_COMMIT_SHA="$(git rev-parse HEAD)"
-            CIUpload REPAIR \
-              --dtk_version "${DTK_VER}" \
-              --torch_version "${TORCH_VERSION}" \
-              --git_commit "${WHEEL_COMMIT_SHA}" \
-              --outputdir output \
-              -f dist/fastpt-*.whl
-          } 2>&1 | tee logs/ciupload-repair.log
-
-      - name: Upload NIGHTLY wheel
-        if: ${{ github.event_name == 'push' }}
-        shell: bash
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          CIUpload NIGHTLY \
-            --devpi_url "${PYPI_URL}" \
-            --password "${{ secrets.PYPI_PASSWORD }}" \
-            --dtk_pkg_name "$(basename "${DTK_PKG_URL}")" \
-            -f output/*.whl \
-            --record 2>&1 | tee logs/ciupload-nightly.log
-
       - name: Upload build records and test logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: fastpt-ci-${{ github.run_id }}-${{ github.run_attempt }}
+          name: fastpt-pr-${{ github.event.pull_request.number }}-${{ github.run_attempt }}
           if-no-files-found: warn
           retention-days: 30
           path: |
             logs/
             dist/*.whl
-            output/*.whl
             torch-mocker/build/Testing/Temporary/
 
       - name: Clean workspace
