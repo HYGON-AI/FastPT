@@ -11,6 +11,8 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
+  checks: read
 
 concurrency:
   group: fastpt-ci-${{ github.ref }}
@@ -18,7 +20,7 @@ concurrency:
 
 env:
   DTK_PKG_URL: ${{ vars.RESOURCE_SERVER_URL }}/dtk-pkg/dtk26.04/DTK-26.04-rc4-centos8-x86_64.tar.gz
-  TORCH_INDEX_URL: http://10.16.1.201:9929/das_nightly/dtk2604-rc4/+simple/torch/
+  PYPI_URL: ${{ vars.PYPI_URL }}
   PYTORCH_REPOSITORY: https://github.com/HYGON-AI/pytorch-das.git
   PYTORCH_REF: 2.12.0-dev
 
@@ -47,6 +49,22 @@ jobs:
         shell: bash
         run: mkdir -p logs
 
+      - name: Configure nightly pip source
+        shell: bash
+        env:
+          PIP_INDEX: ${{ env.PYPI_URL }}/nightly/dtk2604/+simple/
+        run: |
+          set -euo pipefail
+          TRUSTED_HOST="${PIP_INDEX#*://}"
+          TRUSTED_HOST="${TRUSTED_HOST%%/*}"
+          mkdir -p ~/.pip
+          printf '%s\n' \
+            '[global]' \
+            "index-url = ${PIP_INDEX}" \
+            "trusted-host = ${TRUSTED_HOST}" \
+            > ~/.pip/pip.conf
+          echo "PIP_INDEX=${PIP_INDEX}" | tee logs/pip-source.log
+
       - name: Install DTK
         shell: bash
         run: |
@@ -70,50 +88,18 @@ jobs:
             bash hcu_llvm_installer.sh --major 1.0.0
           } 2>&1 | tee logs/install-aicc.log
 
-      - name: Select and install latest Torch 2.12 wheel
+      - name: Install latest Torch 2.12 wheel
         shell: bash
         run: |
           set -euo pipefail
           source /opt/dtk/cuda/env.sh
-
-          TORCH_WHEEL_URL="$(python3 - <<'PY'
-          import html
-          import re
-          import urllib.parse
-          import urllib.request
-
-          index_url = "${{ env.TORCH_INDEX_URL }}"
-          with urllib.request.urlopen(index_url) as response:
-              page = response.read().decode("utf-8")
-
-          links = [html.unescape(link) for link in re.findall(r'href=["\x27]([^"\x27]+)', page, re.I)]
-          candidates = []
-          for link in links:
-              url = urllib.parse.urljoin(index_url, link)
-              filename = urllib.parse.unquote(urllib.parse.urlsplit(url).path.rsplit("/", 1)[-1])
-              if not re.fullmatch(
-                  r"torch-2\.12\.0\+.*-cp310-cp310-manylinux_2_28_x86_64\.whl",
-                  filename,
-              ):
-                  continue
-              build = re.search(r"\.dtk2604\.(\d+)\.g[0-9a-f]+-", filename)
-              if build:
-                  candidates.append((int(build.group(1)), filename, url))
-
-          if not candidates:
-              raise SystemExit("No Torch 2.12 cp310 manylinux_2_28 wheel found")
-
-          _, filename, url = max(candidates)
-          print(url)
-          print(f"Selected {filename}", file=__import__("sys").stderr)
-          PY
-          )"
-
-          echo "TORCH_WHEEL_URL=${TORCH_WHEEL_URL}" | tee logs/torch-wheel.log
-          python3 -m pip install --no-cache-dir wheel setuptools cmake ninja
-          python3 -m pip install --no-cache-dir "${TORCH_WHEEL_URL}"
-          python3 -c 'import torch; print(f"torch={torch.__version__}"); print(f"torch.hip={torch.version.hip}")' \
-            2>&1 | tee -a logs/torch-wheel.log
+          {
+            python3 -m pip index versions torch
+            python3 -m pip install --no-cache-dir wheel setuptools cmake ninja
+            # 未指定 DAS 本地版本，pip 会从该源选择最新的 2.12.0 构建。
+            python3 -m pip install --no-cache-dir 'torch==2.12.0'
+            python3 -c 'import torch; print(f"torch={torch.__version__}"); print(f"torch.hip={torch.version.hip}")'
+          } 2>&1 | tee logs/torch-wheel.log
 
       - name: Checkout matching PyTorch source branch
         shell: bash
@@ -178,6 +164,38 @@ jobs:
           ctest --test-dir torch-mocker/build --output-on-failure -j1 \
             2>&1 | tee logs/ctest.log
 
+      - name: Apply DAS local version to wheel
+        if: ${{ github.event_name == 'push' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            python3 -m pip install --no-cache-dir ciupload
+            DTK_VER="$(echo "${DTK_PKG_URL}" | grep -oP 'dtk\K[0-9]+\.[0-9]+' | tr -d '.')"
+            TORCH_VERSION="$(python3 -c 'import torch; print(torch.__version__.split("+")[0])')"
+            WHEEL_COMMIT_SHA="$(git rev-parse HEAD)"
+            CIUpload REPAIR \
+              --dtk_version "${DTK_VER}" \
+              --torch_version "${TORCH_VERSION}" \
+              --git_commit "${WHEEL_COMMIT_SHA}" \
+              --outputdir output \
+              -f dist/fastpt-*.whl
+          } 2>&1 | tee logs/ciupload-repair.log
+
+      - name: Upload NIGHTLY wheel
+        if: ${{ github.event_name == 'push' }}
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          CIUpload NIGHTLY \
+            --devpi_url "${PYPI_URL}" \
+            --password "${{ secrets.PYPI_PASSWORD }}" \
+            --dtk_pkg_name "$(basename "${DTK_PKG_URL}")" \
+            -f output/*.whl \
+            --record 2>&1 | tee logs/ciupload-nightly.log
+
       - name: Upload build records and test logs
         if: always()
         uses: actions/upload-artifact@v4
@@ -188,6 +206,7 @@ jobs:
           path: |
             logs/
             dist/*.whl
+            output/*.whl
             torch-mocker/build/Testing/Temporary/
 
       - name: Clean workspace
