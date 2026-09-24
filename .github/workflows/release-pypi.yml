@@ -197,19 +197,6 @@ jobs:
             -f output/*.whl \
             --record 2>&1 | tee logs/ciupload-nightly.log
 
-      - name: Upload build records and test logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: fastpt-release-${{ github.run_id }}-${{ github.run_attempt }}
-          if-no-files-found: warn
-          retention-days: 30
-          path: |
-            logs/
-            dist/*.whl
-            output/*.whl
-            torch-mocker/build/Testing/Temporary/
-
       - name: Clean workspace
         if: always()
         shell: bash

@@ -162,18 +162,6 @@ jobs:
           ctest --test-dir torch-mocker/build --output-on-failure -j1 \
             2>&1 | tee logs/ctest.log
 
-      - name: Upload build records and test logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: fastpt-pr-${{ github.event.pull_request.number }}-${{ github.run_attempt }}
-          if-no-files-found: warn
-          retention-days: 30
-          path: |
-            logs/
-            dist/*.whl
-            torch-mocker/build/Testing/Temporary/
-
       - name: Clean workspace
         if: always()
         shell: bash
