@@ -165,7 +165,11 @@ jobs:
         if: ${{ github.event_name == 'push' }}
         shell: bash
         run: |
-          set -euo pipefail
+          set -eo pipefail
+          export ROCM_PATH=/opt/dtk
+          source /opt/dtk/env.sh
+          source /opt/dtk/cuda/env.sh
+          set -u
           {
             python3 -m pip install --no-cache-dir ciupload
             DTK_VER="$(echo "${DTK_PKG_URL}" | grep -oP 'dtk\K[0-9]+\.[0-9]+' | tr -d '.')"
