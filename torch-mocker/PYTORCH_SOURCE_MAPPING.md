@@ -10,7 +10,7 @@ This file records the provenance classification of PyTorch-derived and generated
 
 Classification is based on byte comparison, syntax/token comparison, and inspection of FastPT, torch-mocker, DTK, HCU, HIP, and ROCm adaptation evidence. Internal torch-mocker/FastPT history was also used to confirm modification ownership for semantically different files. A content difference alone is not treated as proof of HYGON authorship.
 
-Of the 88 H2 files, 49 contain direct FastPT, HCU, DTK, or mocker markers. The remaining 39 have substantive differences whose HYGON modification ownership is confirmed by internal torch-mocker/FastPT introduction and adaptation history.
+Of the 89 H2 files, 50 contain direct FastPT, HCU, DTK, or mocker markers. The remaining 39 have substantive differences whose HYGON modification ownership is confirmed by internal torch-mocker/FastPT introduction and adaptation history.
 
 ## H5: Upstream-identical PyTorch files (17)
 
@@ -36,9 +36,13 @@ Action: Retain PyTorch attribution; no HYGON header.
 | `torch-mocker/include/torch/headeronly/util/complex.h` | `torch/headeronly/util/complex.h` |
 | `torch-mocker/include/torch/headeronly/util/Half.h` | `torch/headeronly/util/Half.h` |
 
-## H2: PyTorch-derived files with confirmed HYGON/FastPT substantive modifications (88)
+## H2: PyTorch-derived files with confirmed HYGON/FastPT substantive modifications (89)
 
 Action: Retain PyTorch attribution and apply the H2 modification notice.
+
+The `torch-mocker/include/ATen/cudnn/Descriptors.h` overlay uses FastPT-specific
+tensor and filter descriptor implementation types to isolate cuDNN/MIOpen
+symbols while retaining the original type names as aliases.
 
 | Local path | Upstream path |
 | --- | --- |
@@ -85,6 +89,7 @@ Action: Retain PyTorch attribution and apply the H2 modification notice.
 | `torch-mocker/c10/util/StringUtil.cpp` | `c10/util/StringUtil.cpp` |
 | `torch-mocker/include/ATen/cuda/CUDAContextLight.h` | `aten/src/ATen/cuda/CUDAContextLight.h` |
 | `torch-mocker/include/ATen/cuda/detail/CUDAHooks.h` | `aten/src/ATen/cuda/detail/CUDAHooks.h` |
+| `torch-mocker/include/ATen/cudnn/Descriptors.h` | `aten/src/ATen/cudnn/Descriptors.h` |
 | `torch-mocker/include/ATen/detail/CUDAHooksInterface.h` | `aten/src/ATen/detail/CUDAHooksInterface.h` |
 | `torch-mocker/include/ATen/native/cuda/jit_utils.h` | `aten/src/ATen/native/cuda/jit_utils.h` |
 | `torch-mocker/include/ATen/native/cuda/Loops.cuh` | `aten/src/ATen/native/cuda/Loops.cuh` |
