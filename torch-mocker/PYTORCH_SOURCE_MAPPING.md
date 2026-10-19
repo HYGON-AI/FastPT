@@ -10,7 +10,7 @@ This file records the provenance classification of PyTorch-derived and generated
 
 Classification is based on byte comparison, syntax/token comparison, and inspection of FastPT, torch-mocker, DTK, HCU, HIP, and ROCm adaptation evidence. Internal torch-mocker/FastPT history was also used to confirm modification ownership for semantically different files. A content difference alone is not treated as proof of HYGON authorship.
 
-Of the 89 H2 files, 50 contain direct FastPT, HCU, DTK, or mocker markers. The remaining 39 have substantive differences whose HYGON modification ownership is confirmed by internal torch-mocker/FastPT introduction and adaptation history.
+Of the 88 H2 files, 49 contain direct FastPT, HCU, DTK, or mocker markers. The remaining 39 have substantive differences whose HYGON modification ownership is confirmed by internal torch-mocker/FastPT introduction and adaptation history.
 
 ## H5: Upstream-identical PyTorch files (17)
 
@@ -36,7 +36,7 @@ Action: Retain PyTorch attribution; no HYGON header.
 | `torch-mocker/include/torch/headeronly/util/complex.h` | `torch/headeronly/util/complex.h` |
 | `torch-mocker/include/torch/headeronly/util/Half.h` | `torch/headeronly/util/Half.h` |
 
-## H2: PyTorch-derived files with confirmed HYGON/FastPT substantive modifications (89)
+## H2: PyTorch-derived files with confirmed HYGON/FastPT substantive modifications (88)
 
 Action: Retain PyTorch attribution and apply the H2 modification notice.
 
@@ -124,7 +124,6 @@ symbols while retaining the original type names as aliases.
 | `torch-mocker/torch/csrc/cuda/comm.cpp` | `torch/csrc/cuda/comm.cpp` |
 | `torch-mocker/torch/csrc/cuda/CUDAPluggableAllocator.cpp` | `torch/csrc/cuda/CUDAPluggableAllocator.cpp` |
 | `torch-mocker/torch/csrc/cuda/nccl.cpp` | `torch/csrc/cuda/nccl.cpp` |
-| `torch-mocker/torch/csrc/cuda/Stream.cpp` | `torch/csrc/cuda/Stream.cpp` |
 | `torch-mocker/torch/csrc/CudaIPCTypes.cpp` | `torch/csrc/CudaIPCTypes.cpp` |
 | `torch-mocker/torch/csrc/distributed/c10d/cuda/utils.cpp` | `torch/csrc/distributed/c10d/cuda/utils.cpp` |
 | `torch-mocker/torch/csrc/distributed/c10d/FlightRecorderCuda.cpp` | `torch/csrc/distributed/c10d/FlightRecorderCuda.cpp` |
