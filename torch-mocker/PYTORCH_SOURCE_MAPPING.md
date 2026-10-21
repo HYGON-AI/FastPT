@@ -40,6 +40,10 @@ Action: Retain PyTorch attribution; no HYGON header.
 
 Action: Retain PyTorch attribution and apply the H2 modification notice.
 
+The `torch-mocker/include/ATen/cudnn/Descriptors.h` overlay uses FastPT-specific
+tensor and filter descriptor implementation types to isolate cuDNN/MIOpen
+symbols while retaining the original type names as aliases.
+
 | Local path | Upstream path |
 | --- | --- |
 | `torch-mocker/aten/src/ATen/cuda/CublasHandlePool.cpp` | `aten/src/ATen/cuda/CublasHandlePool.cpp` |
@@ -85,6 +89,7 @@ Action: Retain PyTorch attribution and apply the H2 modification notice.
 | `torch-mocker/c10/util/StringUtil.cpp` | `c10/util/StringUtil.cpp` |
 | `torch-mocker/include/ATen/cuda/CUDAContextLight.h` | `aten/src/ATen/cuda/CUDAContextLight.h` |
 | `torch-mocker/include/ATen/cuda/detail/CUDAHooks.h` | `aten/src/ATen/cuda/detail/CUDAHooks.h` |
+| `torch-mocker/include/ATen/cudnn/Descriptors.h` | `aten/src/ATen/cudnn/Descriptors.h` |
 | `torch-mocker/include/ATen/detail/CUDAHooksInterface.h` | `aten/src/ATen/detail/CUDAHooksInterface.h` |
 | `torch-mocker/include/ATen/native/cuda/jit_utils.h` | `aten/src/ATen/native/cuda/jit_utils.h` |
 | `torch-mocker/include/ATen/native/cuda/Loops.cuh` | `aten/src/ATen/native/cuda/Loops.cuh` |
@@ -119,7 +124,6 @@ Action: Retain PyTorch attribution and apply the H2 modification notice.
 | `torch-mocker/torch/csrc/cuda/comm.cpp` | `torch/csrc/cuda/comm.cpp` |
 | `torch-mocker/torch/csrc/cuda/CUDAPluggableAllocator.cpp` | `torch/csrc/cuda/CUDAPluggableAllocator.cpp` |
 | `torch-mocker/torch/csrc/cuda/nccl.cpp` | `torch/csrc/cuda/nccl.cpp` |
-| `torch-mocker/torch/csrc/cuda/Stream.cpp` | `torch/csrc/cuda/Stream.cpp` |
 | `torch-mocker/torch/csrc/CudaIPCTypes.cpp` | `torch/csrc/CudaIPCTypes.cpp` |
 | `torch-mocker/torch/csrc/distributed/c10d/cuda/utils.cpp` | `torch/csrc/distributed/c10d/cuda/utils.cpp` |
 | `torch-mocker/torch/csrc/distributed/c10d/FlightRecorderCuda.cpp` | `torch/csrc/distributed/c10d/FlightRecorderCuda.cpp` |
