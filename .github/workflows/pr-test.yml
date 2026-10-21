@@ -7,7 +7,7 @@ on:
   pull_request:
     branches:
       - v2.12
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]
 
 permissions:
   contents: read
@@ -24,7 +24,7 @@ env:
 
 jobs:
   test:
-    if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+    if: ${{ github.event.pull_request.head.repo.full_name == github.repository || contains(github.event.pull_request.labels.*.name, 'ready-hcu') }}
     runs-on: self-hosted
     timeout-minutes: 480
     container:
@@ -107,7 +107,6 @@ jobs:
           path: pytorch-das
           fetch-depth: 1
           persist-credentials: false
-          token: ${{ secrets.PYTORCH_READ_TOKEN }}
 
       - name: Build FastPT wheel
         shell: bash
