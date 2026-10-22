@@ -7,14 +7,10 @@ on:
   pull_request:
     branches:
       - v2.12
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened, ready_for_review, labeled]
 
 permissions:
   contents: read
-
-concurrency:
-  group: fastpt-pr-test-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
 
 env:
   DTK_PKG_URL: ${{ vars.RESOURCE_SERVER_URL }}/dtk-pkg/dtk26.04/DTK-26.04-rc4-centos8-x86_64.tar.gz
@@ -24,8 +20,13 @@ env:
 
 jobs:
   test:
-    if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
-    runs-on: self-hosted
+    if: >-
+      (github.event.pull_request.head.repo.full_name == github.repository && github.event.action != 'labeled') ||
+      (github.event.pull_request.head.repo.full_name != github.repository && github.event.action == 'labeled' && github.event.label.name == 'ready-hcu')
+    concurrency:
+      group: fastpt-pr-test-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    runs-on: [self-hosted, ci, bw1100]
     timeout-minutes: 480
     container:
       image: ${{ vars.DTK2604_IMAGE_UBUNTU_PY310 }}
@@ -41,6 +42,7 @@ jobs:
       - name: Checkout PR with latest v2.12
         uses: actions/checkout@v4
         with:
+          ref: ${{ github.sha }}
           fetch-depth: 0
           submodules: recursive
           persist-credentials: false
@@ -107,7 +109,6 @@ jobs:
           path: pytorch-das
           fetch-depth: 1
           persist-credentials: false
-          token: ${{ secrets.PYTORCH_READ_TOKEN }}
 
       - name: Build FastPT wheel
         shell: bash
