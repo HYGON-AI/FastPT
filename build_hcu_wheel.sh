@@ -19,7 +19,8 @@ python3 -c 'import torch; assert torch.version.hip, "HCU/HIP torch is required";
 
 export TORCH_PATH="$(python3 -c 'import os, torch; print(os.path.dirname(torch.__file__))')"
 export TORCH_MOCKER_CMAKE_ARGS="${TORCH_MOCKER_CMAKE_ARGS:-} -DPython3_EXECUTABLE=$(command -v python3)"
-python3 -m pip install --no-cache-dir wheel setuptools auditwheel patchelf 'cmake>=3.29,<3.30'
+python3 -m pip install --no-cache-dir wheel setuptools auditwheel patchelf
+python3 -m pip install --no-cache-dir --ignore-installed 'cmake>=3.29,<3.30'
 export PATH="$(python3 -c 'import sysconfig; print(sysconfig.get_path("scripts"))'):${PATH}"
 cmake --version
 git config --global --add safe.directory "${repo_root}"
