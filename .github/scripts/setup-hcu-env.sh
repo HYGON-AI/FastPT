@@ -69,6 +69,7 @@ source /opt/dtk/env.sh
 source /opt/dtk/cuda/env.sh
 set -u
 if [[ "${DTK_CHANNEL}" == 2610 ]]; then
+    dnf install -y libevent
     mpi_library="$(find /usr /opt -name libmpi.so.40 -print -quit 2>/dev/null || true)"
     [[ -n "${mpi_library}" ]] || { echo 'libmpi.so.40 is missing from the DTK 26.10 image' >&2; exit 1; }
     export LD_LIBRARY_PATH="$(dirname "${mpi_library}"):${LD_LIBRARY_PATH:-}"
