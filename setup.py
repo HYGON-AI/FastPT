@@ -63,7 +63,7 @@ class CMakeBuild(build_ext):
         extra_cmake_args = ""
         cmake_args += extra_cmake_args
         extra_cmake_options = [
-            "USE_GLOG=1",
+            f"USE_GLOG={0 if os.getenv('DTK_CHANNEL') == '2610' else 1}",
             # "OTHER_OPTION=ON",  # 其他需要添加的参数
         ]
         if FASTPT_CTEST:
