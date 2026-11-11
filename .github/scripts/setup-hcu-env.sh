@@ -72,6 +72,19 @@ if [[ "${DTK_CHANNEL}" == 2610 ]]; then
     mpi_library="$(find /usr /opt -name libmpi.so.40 -print -quit 2>/dev/null || true)"
     [[ -n "${mpi_library}" ]] || { echo 'libmpi.so.40 is missing from the DTK 26.10 image' >&2; exit 1; }
     export LD_LIBRARY_PATH="$(dirname "${mpi_library}"):${LD_LIBRARY_PATH:-}"
+    for ((attempt=0; attempt<10; attempt++)); do
+        missing="$(ldd "${mpi_library}" | awk '$2 == "=>" && $3 == "not" {print $1}')"
+        [[ -n "${missing}" ]] || break
+        while IFS= read -r library; do
+            path="$(find /usr /opt -name "${library}" -print -quit 2>/dev/null || true)"
+            [[ -n "${path}" ]] || { echo "${library} is missing from the DTK 26.10 image" >&2; exit 1; }
+            directory="$(dirname "${path}")"
+            case ":${LD_LIBRARY_PATH}:" in
+                *":${directory}:"*) ;;
+                *) export LD_LIBRARY_PATH="${directory}:${LD_LIBRARY_PATH}" ;;
+            esac
+        done <<< "${missing}"
+    done
     if [[ -n "${GITHUB_ENV:-}" ]]; then
         printf 'LD_LIBRARY_PATH=%s\n' "${LD_LIBRARY_PATH}" >> "${GITHUB_ENV}"
     fi
