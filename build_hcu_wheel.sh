@@ -18,6 +18,7 @@ python3 -c 'import torch; assert torch.version.hip, "HCU/HIP torch is required";
 [[ -d "${HIP_TORCH_PATH}/torch" ]] || { echo 'Matching pytorch-das source tree is missing' >&2; exit 1; }
 
 export TORCH_PATH="$(python3 -c 'import os, torch; print(os.path.dirname(torch.__file__))')"
+export TORCH_MOCKER_CMAKE_ARGS="${TORCH_MOCKER_CMAKE_ARGS:-} -DPython3_EXECUTABLE=$(command -v python3)"
 python3 -m pip install --no-cache-dir wheel setuptools auditwheel patchelf
 git config --global --add safe.directory "${repo_root}"
 git config --global --add safe.directory "${HIP_TORCH_PATH}"
