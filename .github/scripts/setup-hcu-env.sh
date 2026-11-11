@@ -70,8 +70,16 @@ source /opt/dtk/cuda/env.sh
 set -u
 if [[ "${DTK_CHANNEL}" == 2610 ]]; then
     dnf install -y libevent
-    mpi_library="$(find /usr /opt -name libmpi.so.40 -print -quit 2>/dev/null || true)"
-    [[ -n "${mpi_library}" ]] || { echo 'libmpi.so.40 is missing from the DTK 26.10 image' >&2; exit 1; }
+    mapfile -t mpi_libraries < <(find /usr /opt -name libmpi.so.40 -print 2>/dev/null)
+    mpi_library=
+    for candidate in "${mpi_libraries[@]}"; do
+        if nm -D "${candidate}" 2>/dev/null | awk '$NF ~ /^MPIX_Query_rocm_support(@|$)/ {found=1} END {exit !found}'; then
+            mpi_library="${candidate}"
+            break
+        fi
+    done
+    [[ -n "${mpi_library}" ]] || { printf 'No HCU-compatible libmpi.so.40 found; candidates: %s\n' "${mpi_libraries[*]}" >&2; exit 1; }
+    echo "Using MPI library: ${mpi_library}"
     export LD_LIBRARY_PATH="$(dirname "${mpi_library}"):${LD_LIBRARY_PATH:-}"
     for ((attempt=0; attempt<10; attempt++)); do
         missing="$(ldd "${mpi_library}" | awk '$2 == "=>" && $3 == "not" {print $1}')"
