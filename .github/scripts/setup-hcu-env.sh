@@ -68,6 +68,14 @@ source /opt/dtk/env.sh
 # shellcheck disable=SC1091
 source /opt/dtk/cuda/env.sh
 set -u
+if [[ "${DTK_CHANNEL}" == 2610 ]]; then
+    mpi_library="$(find /usr /opt -name libmpi.so.40 -print -quit 2>/dev/null || true)"
+    [[ -n "${mpi_library}" ]] || { echo 'libmpi.so.40 is missing from the DTK 26.10 image' >&2; exit 1; }
+    export LD_LIBRARY_PATH="$(dirname "${mpi_library}"):${LD_LIBRARY_PATH:-}"
+    if [[ -n "${GITHUB_ENV:-}" ]]; then
+        printf 'LD_LIBRARY_PATH=%s\n' "${LD_LIBRARY_PATH}" >> "${GITHUB_ENV}"
+    fi
+fi
 command -v aicc >/dev/null || { echo 'AICC is missing after installation' >&2; exit 1; }
 python3 - "${DTK_CHANNEL}" <<'PY'
 import sys
