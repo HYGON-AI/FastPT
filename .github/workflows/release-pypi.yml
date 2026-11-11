@@ -54,6 +54,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          submodules: recursive
           persist-credentials: false
       - name: Prepare matching DTK, AICC and nightly wheels
         shell: bash
@@ -86,7 +87,7 @@ jobs:
 
   test:
     needs: build
-    if: ${{ always() && !cancelled() }}
+    if: ${{ needs.build.result == 'success' }}
     strategy:
       fail-fast: false
       matrix:

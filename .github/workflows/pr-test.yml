@@ -90,6 +90,7 @@ jobs:
         with:
           ref: ${{ needs.authorize.outputs.base_sha }}
           fetch-depth: 0
+          submodules: recursive
           persist-credentials: false
       - name: Prepare matching DTK, AICC and nightly wheels
         shell: bash
@@ -134,7 +135,7 @@ jobs:
 
   test:
     needs: [authorize, build]
-    if: ${{ always() && needs.authorize.outputs.ready == 'true' && !cancelled() }}
+    if: ${{ needs.authorize.outputs.ready == 'true' && needs.build.result == 'success' }}
     strategy:
       fail-fast: false
       matrix:
