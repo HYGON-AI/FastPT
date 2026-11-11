@@ -4265,7 +4265,7 @@ class DeviceCachingAllocator {
 
     if (record_history) {
       // Skip if action is in the skip_actions set
-      bool should_skip = skip_actions_list.contains(action);
+      bool should_skip = skip_actions_list.find(action) != skip_actions_list.end();
       if (!should_skip) {
         alloc_buffer.insertEntries(te);
       }

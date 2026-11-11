@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 from setuptools import setup, Extension, find_packages
+from setuptools.dist import Distribution
 from setuptools.command.build_ext import build_ext
 from setuptools.command.build_py import build_py
 from setuptools.command.build import build
@@ -62,7 +63,7 @@ class CMakeBuild(build_ext):
         extra_cmake_args = ""
         cmake_args += extra_cmake_args
         extra_cmake_options = [
-            "USE_GLOG=1",
+            f"USE_GLOG={0 if os.getenv('DTK_CHANNEL') == '2610' else 1}",
             # "OTHER_OPTION=ON",  # 其他需要添加的参数
         ]
         if FASTPT_CTEST:
@@ -135,6 +136,10 @@ class CustomDistWheel(bdist_wheel):
         self.run_command('build')
         bdist_wheel.run(self)
 
+class BinaryDistribution(Distribution):
+    def has_ext_modules(self):
+        return True
+
 class NoDistInfoBuild(build_py):
     def run(self):
         super().run()  
@@ -162,7 +167,7 @@ with open(dtk_path, 'r') as file:
     content = file.read().strip()
 dtk_version = content.replace('.', '')
 torch_hcu_version = torch.__hcu_version__
-hcu_version = __version__ + f'+das.dtk' + dtk_version
+hcu_version = __version__.split('+', 1)[0] + f'+das.dtk' + dtk_version
 required_version = ".".join(torch_version.split(".")[:2])
 print('hcu_version:', hcu_version)
 def write_fastpt_shell():
@@ -317,6 +322,7 @@ if __name__ == "__main__":
         ext_modules=[],
         include_package_data=True,
         cmdclass=setup_kwargs['cmdclass'],
+        distclass=BinaryDistribution if not FASTPT_HIPIFY_ONLY else Distribution,
         zip_safe=False,
         python_requires=f">={python_min_version_str}",
         entry_points=setup_kwargs['entry_points'],
