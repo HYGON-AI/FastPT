@@ -162,7 +162,7 @@ with open(dtk_path, 'r') as file:
     content = file.read().strip()
 dtk_version = content.replace('.', '')
 torch_hcu_version = torch.__hcu_version__
-hcu_version = __version__ + f'+das.dtk' + dtk_version
+hcu_version = __version__.split('+', 1)[0] + f'+das.dtk' + dtk_version
 required_version = ".".join(torch_version.split(".")[:2])
 print('hcu_version:', hcu_version)
 def write_fastpt_shell():

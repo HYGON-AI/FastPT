@@ -5,15 +5,17 @@ name: pr-test
 
 on:
   pull_request_target:
-    branches:
-      - v2.12
-    types: [opened, synchronize, reopened, ready_for_review, labeled]
+    branches: [v2.12]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+concurrency:
+  group: fastpt-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
 
 env:
-  DTK_PKG_URL: ${{ vars.RESOURCE_SERVER_URL }}/dtk-pkg/dtk26.04/DTK-26.04-rc4-centos8-x86_64.tar.gz
   PYPI_URL: ${{ vars.PYPI_URL }}
   PYTORCH_REF: 2.12.0-dev
   HIP_TORCH_PATH: ${{ github.workspace }}/pytorch-das
@@ -25,15 +27,15 @@ jobs:
       contents: read
       pull-requests: read
     outputs:
-      approved: ${{ steps.check.outputs.approved }}
+      ready: ${{ steps.check.outputs.ready }}
       base_sha: ${{ steps.check.outputs.base_sha }}
       head_sha: ${{ steps.check.outputs.head_sha }}
     steps:
-      - name: Check PR event and maintainer approval
+      - name: Pin the current PR commits
         id: check
         uses: actions/github-script@v7
         env:
-          CONFIGURED: ${{ vars.RESOURCE_SERVER_URL != '' && vars.PYPI_URL != '' && vars.DTK2604_IMAGE_UBUNTU_PY310 != '' }}
+          CONFIGURED: ${{ vars.PYPI_URL != '' && vars.RESOURCE_SERVER_URL != '' && vars.DTK2604_IMAGE_UBUNTU_PY310 != '' && vars.DTK2610_IMAGE_ROCKY_PY312 != '' && vars.DTK2610_PKG_URL != '' && vars.AICC2610_INSTALLER_URL != '' }}
         with:
           script: |
             const eventPr = context.payload.pull_request;
@@ -43,20 +45,8 @@ jobs:
             });
             if (pr.state !== 'open' || pr.base.ref !== 'v2.12' ||
                 pr.head.sha !== eventPr.head.sha) {
-              core.notice('PR changed since this event; wait for the new event.');
+              core.notice('PR changed since this event; wait for the next event.');
               return;
-            }
-            const sameRepo = pr.head.repo?.full_name === context.repo.owner + '/' + context.repo.repo;
-            if (sameRepo) {
-              if (context.payload.action === 'labeled') return;
-            } else {
-              if (context.payload.action !== 'labeled' ||
-                  context.payload.label?.name !== 'ready-hcu') return;
-              const { data } = await github.rest.repos.getCollaboratorPermissionLevel({
-                ...context.repo,
-                username: context.actor,
-              });
-              if (!['write', 'maintain', 'admin'].includes(data.permission)) return;
             }
             if (process.env.CONFIGURED !== 'true') {
               core.setFailed('Required repository CI variables are missing.');
@@ -64,38 +54,52 @@ jobs:
             }
             core.setOutput('base_sha', pr.base.sha);
             core.setOutput('head_sha', pr.head.sha);
-            core.setOutput('approved', 'true');
+            core.setOutput('ready', 'true');
 
-  test:
+  build:
     needs: authorize
-    if: needs.authorize.outputs.approved == 'true'
+    if: needs.authorize.outputs.ready == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - dtk: '2604'
+            image: ${{ vars.DTK2604_IMAGE_UBUNTU_PY310 }}
+            dtk_pkg_url: ${{ vars.RESOURCE_SERVER_URL }}/dtk-pkg/dtk26.04/DTK-26.04-rc4-centos8-x86_64.tar.gz
+            aicc_installer_url: ${{ vars.RESOURCE_SERVER_URL }}/ai_cc/Nightly/hcu_llvm_installer.sh
+            aicc_major: 1.0.0
+          - dtk: '2610'
+            image: ${{ vars.DTK2610_IMAGE_ROCKY_PY312 }}
+            dtk_pkg_url: ${{ vars.DTK2610_PKG_URL }}
+            aicc_installer_url: ${{ vars.AICC2610_INSTALLER_URL }}
+            aicc_major: 2.0.0
+    name: build-dtk${{ matrix.dtk }}
+    runs-on: hygon-build
+    timeout-minutes: 180
     permissions:
       contents: read
-    concurrency:
-      group: fastpt-pr-test-${{ github.event.pull_request.number }}
-      cancel-in-progress: true
-    runs-on: [self-hosted, ci, bw1100]
-    timeout-minutes: 480
     container:
-      image: ${{ vars.DTK2604_IMAGE_UBUNTU_PY310 }}
-      options: >-
-        --device=/dev/kfd --device=/dev/dri/ --group-add video
-        -v /opt/hyhal/:/opt/hyhal/:ro
-        --shm-size=80G
-        --cap-add=SYS_PTRACE
-        --security-opt seccomp=unconfined
-        --privileged=true
-
+      image: ${{ matrix.image }}
+    env:
+      DTK_CHANNEL: ${{ matrix.dtk }}
+      DTK_PKG_URL: ${{ matrix.dtk_pkg_url }}
+      AICC_INSTALLER_URL: ${{ matrix.aicc_installer_url }}
+      AICC_MAJOR: ${{ matrix.aicc_major }}
     steps:
-      - name: Checkout v2.12 at the approved base commit
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           ref: ${{ needs.authorize.outputs.base_sha }}
           fetch-depth: 0
-          submodules: recursive
           persist-credentials: false
-
-      - name: Merge the approved PR commit
+      - name: Prepare matching DTK, AICC and nightly wheels
+        shell: bash
+        run: |
+          set -euo pipefail
+          d="/ci_public/${GITHUB_REPOSITORY#*/}/runs/${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT}/${DTK_CHANNEL}"
+          mkdir -p "${d}"
+          printf '%s\n' "${GITHUB_WORKSPACE}" > "${d}/workspace.txt"
+          bash .github/scripts/setup-hcu-env.sh "${d}"
+      - name: Merge the pinned PR commit
         shell: bash
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
@@ -107,124 +111,92 @@ jobs:
           test "$(git rev-parse refs/remotes/origin/ci-pr-head)" = "${PR_HEAD_SHA}"
           git -c user.name='FastPT CI' -c user.email='ci@users.noreply.github.com' \
             merge --no-ff --no-edit "${PR_HEAD_SHA}"
-
-      - name: Prepare logs and pip source
-        shell: bash
-        env:
-          PIP_INDEX: ${{ env.PYPI_URL }}/nightly/dtk2604/+simple/
-        run: |
-          set -euo pipefail
-          mkdir -p logs ~/.pip
-          TRUSTED_HOST="${PIP_INDEX#*://}"
-          TRUSTED_HOST="${TRUSTED_HOST%%/*}"
-          printf '%s\n' \
-            '[global]' \
-            "index-url = ${PIP_INDEX}" \
-            "trusted-host = ${TRUSTED_HOST}" \
-            > ~/.pip/pip.conf
-          echo "PIP_INDEX=${PIP_INDEX}" | tee logs/pip-source.log
-
-      - name: Install DTK
-        shell: bash
-        run: |
-          set -euo pipefail
-          {
-            cd /opt
-            wget -q "${DTK_PKG_URL}"
-            tar -xzf "$(basename "${DTK_PKG_URL}")"
-            rm -rf dtk
-            mv dtk-* dtk
-          } 2>&1 | tee "${GITHUB_WORKSPACE}/logs/install-dtk.log"
-
-      - name: Install AICC
-        shell: bash
-        env:
-          RESOURCE_SERVER_URL: ${{ vars.RESOURCE_SERVER_URL }}
-        run: |
-          set -euo pipefail
-          {
-            wget "${RESOURCE_SERVER_URL}/ai_cc/Nightly/hcu_llvm_installer.sh"
-            bash hcu_llvm_installer.sh --major 1.0.0
-          } 2>&1 | tee logs/install-aicc.log
-
-      - name: Install latest Torch 2.12 wheel
-        shell: bash
-        run: |
-          set -eo pipefail
-          export ROCM_PATH=/opt/dtk
-          source /opt/dtk/env.sh
-          source /opt/dtk/cuda/env.sh
-          set -u
-          {
-            python3 -m pip index versions torch
-            python3 -m pip install --no-cache-dir numpy==1.24.3 wheel setuptools cmake ninja
-            python3 -m pip install --no-cache-dir --upgrade --force-reinstall 'torch==2.12.0'
-            python3 -c 'import torch; print(f"torch={torch.__version__}"); print(f"torch.hip={torch.version.hip}")'
-          } 2>&1 | tee logs/torch-wheel.log
-
-      - name: Checkout PyTorch 2.12 source
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           repository: HYGON-AI/pytorch-das
           ref: ${{ env.PYTORCH_REF }}
           path: pytorch-das
           fetch-depth: 1
           persist-credentials: false
+      - name: Build manylinux wheel and CTest executables
+        shell: bash
+        run: bash build_hcu_wheel.sh
+      - name: Share wheel and CTest build
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          wheels=(dist/manylinux/fastpt-*.whl)
+          (( ${#wheels[@]} == 1 )) || exit 1
+          d="/ci_public/${GITHUB_REPOSITORY#*/}/runs/${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT}/${DTK_CHANNEL}"
+          cp "${wheels[0]}" "${d}/"
+          tar -czf "${d}/ctest-build.tar.gz" torch-mocker/build
 
-      - name: Build FastPT wheel
+  test:
+    needs: [authorize, build]
+    if: ${{ always() && needs.authorize.outputs.ready == 'true' && !cancelled() }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - dtk: '2604'
+            image: ${{ vars.DTK2604_IMAGE_UBUNTU_PY310 }}
+            dtk_pkg_url: ${{ vars.RESOURCE_SERVER_URL }}/dtk-pkg/dtk26.04/DTK-26.04-rc4-centos8-x86_64.tar.gz
+            aicc_installer_url: ${{ vars.RESOURCE_SERVER_URL }}/ai_cc/Nightly/hcu_llvm_installer.sh
+            aicc_major: 1.0.0
+          - dtk: '2610'
+            image: ${{ vars.DTK2610_IMAGE_ROCKY_PY312 }}
+            dtk_pkg_url: ${{ vars.DTK2610_PKG_URL }}
+            aicc_installer_url: ${{ vars.AICC2610_INSTALLER_URL }}
+            aicc_major: 2.0.0
+    name: test-dtk${{ matrix.dtk }}
+    runs-on: hygon-bw1100-1card
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    container:
+      image: ${{ matrix.image }}
+    env:
+      DTK_CHANNEL: ${{ matrix.dtk }}
+      DTK_PKG_URL: ${{ matrix.dtk_pkg_url }}
+      AICC_INSTALLER_URL: ${{ matrix.aicc_installer_url }}
+      AICC_MAJOR: ${{ matrix.aicc_major }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.authorize.outputs.base_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Restore exact build environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          d="/ci_public/${GITHUB_REPOSITORY#*/}/runs/${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT}/${DTK_CHANNEL}"
+          test "$(cat "${d}/workspace.txt")" = "${GITHUB_WORKSPACE}"
+          bash .github/scripts/setup-hcu-env.sh "${d}" restore
+      - name: Merge the pinned PR commit
         shell: bash
         env:
-          FASTPT_CTEST: "1"
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_HEAD_SHA: ${{ needs.authorize.outputs.head_sha }}
         run: |
-          set -eo pipefail
-          export ROCM_PATH=/opt/dtk
-          source /opt/dtk/env.sh
-          source /opt/dtk/cuda/env.sh
-          set -u
+          set -euo pipefail
           git config --global --add safe.directory "${GITHUB_WORKSPACE}"
-          git config --global --add safe.directory "${HIP_TORCH_PATH}"
-          export TORCH_PATH="$(python3 -c 'import os, torch; print(os.path.dirname(torch.__file__))')"
-          {
-            echo "FastPT commit: $(git rev-parse HEAD)"
-            echo "PyTorch source: $(git -C "${HIP_TORCH_PATH}" rev-parse HEAD)"
-            echo "TORCH_PATH=${TORCH_PATH}"
-            echo "HIP_TORCH_PATH=${HIP_TORCH_PATH}"
-            python3 --version
-            cat /opt/dtk/.info/rocm_version 2>/dev/null || true
-            git submodule update --init --recursive
-            rm -rf build dist fastpt.egg-info torch-mocker/build
-            python3 setup.py bdist_wheel
-            ls -lh dist/*.whl
-          } 2>&1 | tee logs/build.log
-
-      - name: Install and verify FastPT
+          git fetch --no-tags origin "+refs/pull/${PR_NUMBER}/head:refs/remotes/origin/ci-pr-head"
+          test "$(git rev-parse refs/remotes/origin/ci-pr-head)" = "${PR_HEAD_SHA}"
+          git -c user.name='FastPT CI' -c user.email='ci@users.noreply.github.com' \
+            merge --no-ff --no-edit "${PR_HEAD_SHA}"
+      - name: Restore wheel and CTest build
         shell: bash
         run: |
-          set -eo pipefail
-          export ROCM_PATH=/opt/dtk
-          source /opt/dtk/env.sh
-          source /opt/dtk/cuda/env.sh
-          set -u
-          {
-            python3 -m pip install --no-deps --force-reinstall dist/fastpt-*.whl
-            python3 -c 'import fastpt; print(fastpt.__version__)'
-            fastpt.hipify.file --help
-          } 2>&1 | tee logs/install-verify.log
-
-      - name: Run CTest
+          set -euo pipefail
+          d="/ci_public/${GITHUB_REPOSITORY#*/}/runs/${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT}/${DTK_CHANNEL}"
+          shopt -s nullglob
+          wheels=("${d}"/fastpt-*.whl)
+          (( ${#wheels[@]} == 1 )) || exit 1
+          mkdir -p dist/manylinux
+          cp "${wheels[0]}" dist/manylinux/
+          tar -xzf "${d}/ctest-build.tar.gz"
+      - name: Install and run CTest
         shell: bash
-        run: |
-          set -eo pipefail
-          export ROCM_PATH=/opt/dtk
-          source /opt/dtk/env.sh
-          source /opt/dtk/cuda/env.sh
-          set -u
-          export TORCH_PATH="$(python3 -c 'import os, torch; print(os.path.dirname(torch.__file__))')"
-          export LD_LIBRARY_PATH="${PWD}/torch-mocker/build:${TORCH_PATH}/lib:${LD_LIBRARY_PATH:-}"
-          ctest --test-dir torch-mocker/build --output-on-failure -j1 \
-            2>&1 | tee logs/ctest.log
-
-      - name: Clean workspace
-        if: always()
-        shell: bash
-        run: rm -rf "${GITHUB_WORKSPACE}"/* "${GITHUB_WORKSPACE}"/.[!.]* || true
+        run: bash .github/scripts/test-hcu-wheel.sh
