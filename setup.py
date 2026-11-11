@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 from setuptools import setup, Extension, find_packages
+from setuptools.dist import Distribution
 from setuptools.command.build_ext import build_ext
 from setuptools.command.build_py import build_py
 from setuptools.command.build import build
@@ -134,6 +135,10 @@ class CustomDistWheel(bdist_wheel):
         self.skip_install = True
         self.run_command('build')
         bdist_wheel.run(self)
+
+class BinaryDistribution(Distribution):
+    def has_ext_modules(self):
+        return True
 
 class NoDistInfoBuild(build_py):
     def run(self):
@@ -317,6 +322,7 @@ if __name__ == "__main__":
         ext_modules=[],
         include_package_data=True,
         cmdclass=setup_kwargs['cmdclass'],
+        distclass=BinaryDistribution if not FASTPT_HIPIFY_ONLY else Distribution,
         zip_safe=False,
         python_requires=f">={python_min_version_str}",
         entry_points=setup_kwargs['entry_points'],
