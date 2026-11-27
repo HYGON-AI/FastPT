@@ -6,10 +6,10 @@ name: pr-test
 on:
   pull_request_target:
     branches: [v2.12]
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened, ready_for_review, labeled]
 
 concurrency:
-  group: fastpt-pr-${{ github.event.pull_request.number }}
+  group: fastpt-pr-${{ github.event.pull_request.number }}-${{ github.event.action == 'labeled' && github.event.label.name || 'code' }}
   cancel-in-progress: true
 
 permissions:
@@ -46,6 +46,20 @@ jobs:
             if (pr.state !== 'open' || pr.base.ref !== 'v2.12' ||
                 pr.head.sha !== eventPr.head.sha) {
               core.notice('PR changed since this event; wait for the next event.');
+              return;
+            }
+            const isFork = pr.head.repo.full_name !== pr.base.repo.full_name;
+            if (isFork && (context.payload.action !== 'labeled' ||
+                context.payload.label?.name !== 'ready-hcu')) {
+              core.notice('Fork PR GPU tests require a new ready-hcu label event.');
+              return;
+            }
+            if (!isFork && context.payload.action === 'labeled') {
+              core.notice('Label changes do not restart same-repository GPU tests.');
+              return;
+            }
+            if (isFork && !pr.labels.some(label => label.name === 'ready-hcu')) {
+              core.notice('ready-hcu label was removed before the run started.');
               return;
             }
             if (process.env.CONFIGURED !== 'true') {
