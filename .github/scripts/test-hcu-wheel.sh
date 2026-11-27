@@ -15,5 +15,5 @@ python3 -m pip install --no-deps --force-reinstall "${wheels[0]}"
 python3 -c 'import fastpt; print(fastpt.__version__)'
 fastpt.hipify.file --help
 torch_path="$(python3 -c 'import os, torch; print(os.path.dirname(torch.__file__))')"
-export LD_LIBRARY_PATH="${PWD}/torch-mocker/build:${torch_path}/lib:${LD_LIBRARY_PATH:-}"
+export LD_LIBRARY_PATH="${PWD}/torch-mocker/build:${torch_path}/lib:/usr/local/lib:${LD_LIBRARY_PATH:-}"
 ctest --test-dir torch-mocker/build --output-on-failure -j1
