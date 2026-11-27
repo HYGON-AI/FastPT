@@ -48,6 +48,10 @@ jobs:
               core.notice('PR changed since this event; wait for the next event.');
               return;
             }
+            if (!pr.head.repo) {
+              core.notice('PR head repository is unavailable.');
+              return;
+            }
             const isFork = pr.head.repo.full_name !== pr.base.repo.full_name;
             if (isFork && (context.payload.action !== 'labeled' ||
                 context.payload.label?.name !== 'ready-hcu')) {
@@ -61,6 +65,16 @@ jobs:
             if (isFork && !pr.labels.some(label => label.name === 'ready-hcu')) {
               core.notice('ready-hcu label was removed before the run started.');
               return;
+            }
+            if (isFork) {
+              const { data } = await github.rest.repos.getCollaboratorPermissionLevel({
+                ...context.repo,
+                username: context.actor,
+              });
+              if (!['write', 'maintain', 'admin'].includes(data.permission)) {
+                core.notice('ready-hcu must be applied by a maintainer with write access.');
+                return;
+              }
             }
             if (process.env.CONFIGURED !== 'true') {
               core.setFailed('Required repository CI variables are missing.');
